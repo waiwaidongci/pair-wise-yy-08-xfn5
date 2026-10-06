@@ -6,9 +6,15 @@ import type {
   AudioProject,
   AudioTrack,
   ClipEffect,
+  MergeReport,
   TrackColor,
 } from '../types/audio';
 import { SYNTHETIC_ASSETS } from '../utils/syntheticAudio';
+import {
+  cloneProject,
+  mergeProjects,
+  stripProjectConflicts,
+} from '../utils/projectMerge';
 
 const TRACK_COLORS: TrackColor[] = ['#2563eb', '#0f9f7a', '#d97706', '#c2413b', '#7c3aed', '#0891b2'];
 
@@ -114,8 +120,20 @@ function initialProject(): AudioProject {
   };
 }
 
+interface ImportSnapshot {
+  project: AudioProject;
+  baseProject: AudioProject;
+  selectedClipId: string | null;
+  selectedTrackId: string;
+  playhead: number;
+}
+
 interface StudioState {
   project: AudioProject;
+  /** 与同事分叉时的共同基准（随工程持久化，导出时一并打包） */
+  baseProject: AudioProject;
+  /** 上一次导入前的内存快照，用于一键退回导入前 */
+  lastImportSnapshot: ImportSnapshot | null;
   selectedClipId: string | null;
   selectedTrackId: string;
   isPlaying: boolean;
@@ -139,7 +157,14 @@ interface StudioState {
   updateTransport: (patch: Partial<Pick<AudioProject, 'bpm' | 'snap' | 'loopEnabled' | 'loopStart' | 'loopEnd' | 'pixelsPerSecond'>>) => void;
   importFile: (file: File) => Promise<void>;
   addRecordedBlob: (blob: Blob, duration: number) => Promise<void>;
-  replaceProject: (project: AudioProject) => void;
+  /** 按 base / 本机 / 对方三路合并导入工程，返回合并报告 */
+  mergeImportProject: (incoming: AudioProject, base: AudioProject, legacyBase: boolean) => MergeReport;
+  /** 一步退回上一次导入前的工程 */
+  undoLastImport: () => boolean;
+  /** 人工解决片段冲突后移除标记；同轨最后一个冲突清掉时同步清轨道标记 */
+  resolveClipConflict: (trackId: string, clipId: string) => void;
+  /** 人工确认轨道参数冲突，清掉轨道标记及该轨片段上的传播标记 */
+  resolveTrackConflict: (trackId: string) => void;
   markSaved: () => void;
 }
 
@@ -169,6 +194,11 @@ function normalizeProject(project: AudioProject): AudioProject {
 
 function timestamp(project: AudioProject): AudioProject {
   return { ...project, updatedAt: Date.now() };
+}
+
+/** 基准只保留干净工程，合并时重新检测冲突 */
+function normalizeBaseProject(project: AudioProject | undefined, fallback: AudioProject): AudioProject {
+  return stripProjectConflicts(normalizeProject(project ?? fallback));
 }
 
 async function readFileAsDataUrl(file: File | Blob): Promise<string> {
@@ -223,6 +253,8 @@ export const useStudioStore = create<StudioState>()(
   persist(
     (set, get) => ({
       project: initialProject(),
+      baseProject: stripProjectConflicts(initialProject()),
+      lastImportSnapshot: null,
       selectedClipId: 'clip-chords-a',
       selectedTrackId: 'track-drums',
       isPlaying: false,
@@ -419,30 +451,110 @@ export const useStudioStore = create<StudioState>()(
           };
         });
       },
-      replaceProject: (project) =>
+      mergeImportProject: (incoming, base, legacyBase) => {
+        const state = get();
+        const local = normalizeProject(state.project);
+        const incomingNormalized = normalizeProject(incoming);
+        const baseNormalized = normalizeProject(base);
+        const snapshot: ImportSnapshot = {
+          project: cloneProject(local),
+          baseProject: cloneProject(state.baseProject),
+          selectedClipId: state.selectedClipId,
+          selectedTrackId: state.selectedTrackId,
+          playhead: state.playhead,
+        };
+        const { project: merged, report } = mergeProjects(
+          local,
+          incomingNormalized,
+          baseNormalized,
+          { legacyBase },
+        );
+        const firstClipId = merged.tracks.flatMap((track) => track.clips)[0]?.id ?? null;
         set({
-          project: normalizeProject(project),
+          project: merged,
+          // 合并后的干净工程成为新的共同基准
+          baseProject: stripProjectConflicts(merged),
+          lastImportSnapshot: snapshot,
           playhead: 0,
           isPlaying: false,
-          selectedClipId: project.tracks.flatMap((track) => track.clips)[0]?.id ?? null,
-          selectedTrackId: project.tracks[0]?.id ?? '',
-        }),
+          selectedClipId: firstClipId,
+          selectedTrackId: merged.tracks[0]?.id ?? '',
+        });
+        return report;
+      },
+      undoLastImport: () => {
+        const snapshot = get().lastImportSnapshot;
+        if (!snapshot) return false;
+        set({
+          project: snapshot.project,
+          baseProject: snapshot.baseProject,
+          lastImportSnapshot: null,
+          selectedClipId: snapshot.selectedClipId,
+          selectedTrackId: snapshot.selectedTrackId,
+          playhead: snapshot.playhead,
+          isPlaying: false,
+        });
+        return true;
+      },
+      resolveClipConflict: (trackId, clipId) =>
+        set((state) => ({
+          project: timestamp({
+            ...state.project,
+            tracks: state.project.tracks.map((track) =>
+              track.id !== trackId
+                ? track
+                : {
+                    ...track,
+                    clips: track.clips.map((clip) =>
+                      clip.id === clipId && clip.conflict
+                        ? { ...clip, conflict: undefined }
+                        : clip,
+                    ),
+                  },
+            ),
+          }),
+        })),
+      resolveTrackConflict: (trackId) =>
+        set((state) => ({
+          project: timestamp({
+            ...state.project,
+            tracks: state.project.tracks.map((track) =>
+              track.id === trackId
+                ? {
+                    ...track,
+                    trackConflicts: undefined,
+                    clips: track.clips.map((clip) =>
+                      clip.conflict?.kind === 'track-both-edited' ||
+                      clip.conflict?.kind === 'track-delete-modify'
+                        ? { ...clip, conflict: undefined }
+                        : clip,
+                    ),
+                  }
+                : track,
+            ),
+          }),
+        })),
       markSaved: () => set({ projectSavedAt: Date.now() }),
     }),
     {
       name: 'pair-wise-yy-08-studio',
       partialize: (state) => ({
         project: state.project,
+        baseProject: state.baseProject,
         zoom: state.zoom,
         selectedClipId: state.selectedClipId,
         selectedTrackId: state.selectedTrackId,
       }),
       merge: (persisted, current) => {
         const saved = persisted as Partial<StudioState> | undefined;
+        const project = normalizeProject(saved?.project ?? current.project);
         return {
           ...current,
           ...saved,
-          project: normalizeProject(saved?.project ?? current.project),
+          project,
+          // 旧版本地存档没有基准：用当前工程回填，首次合并导入即从此处分叉
+          baseProject: normalizeBaseProject(saved?.baseProject, project),
+          lastImportSnapshot: null,
         };
       },
     },

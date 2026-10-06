@@ -3,8 +3,10 @@ import {
   DeleteOutline,
   GraphicEq,
   Lock,
+  Merge,
   VolumeOff,
   VolumeUp,
+  WarningAmber,
 } from '@mui/icons-material';
 import {
   Box,
@@ -45,6 +47,8 @@ export function TrackTimeline() {
   const selectClip = useStudioStore((state) => state.selectClip);
   const deleteClip = useStudioStore((state) => state.deleteClip);
   const duplicateClip = useStudioStore((state) => state.duplicateClip);
+  const resolveClipConflict = useStudioStore((state) => state.resolveClipConflict);
+  const resolveTrackConflict = useStudioStore((state) => state.resolveTrackConflict);
   const dragState = useRef<DragState | null>(null);
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -222,6 +226,24 @@ export function TrackTimeline() {
                       S
                     </button>
                   </div>
+                  {track.trackConflicts && track.trackConflicts.length > 0 && (
+                    <div className="track-conflict-row">
+                      <Tooltip
+                        title={`轨道参数（${track.trackConflicts.join('、')}）两边都改过，当前保留的是本机设置`}
+                      >
+                        <span className="track-conflict-badge">
+                          <WarningAmber fontSize="inherit" /> 轨道参数冲突
+                        </span>
+                      </Tooltip>
+                      <button
+                        type="button"
+                        className="conflict-resolve-button"
+                        onClick={() => resolveTrackConflict(track.id)}
+                      >
+                        确认保留
+                      </button>
+                    </div>
+                  )}
                   <div className="track-mix-row">
                     <span>音量</span>
                     <Slider
@@ -265,20 +287,39 @@ export function TrackTimeline() {
                   {track.clips.map((clip) => {
                     const asset = project.assets.find((item) => item.id === clip.assetId);
                     const selected = selectedClipId === clip.id;
+                    const conflict = clip.conflict;
                     return (
                       <Box
                         key={clip.id}
-                        className={`audio-clip ${selected ? 'audio-clip--selected' : ''}`}
+                        className={`audio-clip ${selected ? 'audio-clip--selected' : ''} ${conflict ? 'audio-clip--conflict' : ''}`}
                         style={{
                           left: `${clip.start * pps}px`,
                           width: `${Math.max(20, clip.duration * pps)}px`,
                           top: `${(track.height - 82) / 2}px`,
-                          background: `${track.color}22`,
-                          borderColor: selected ? track.color : `${track.color}99`,
+                          background: conflict ? 'rgba(217, 119, 6, .16)' : `${track.color}22`,
+                          borderColor: conflict ? '#d97706' : selected ? track.color : `${track.color}99`,
                         }}
                         onPointerDown={(event) => startDrag(event, track, clip, 'move')}
                       >
-                        <div className="clip-title" title={clip.name}>
+                        {conflict && (
+                          <Tooltip title={conflict.note}>
+                            <span
+                              className={`clip-conflict-badge ${
+                                conflict.kind === 'clip-both-edited'
+                                  ? 'clip-conflict-badge--both'
+                                  : 'clip-conflict-badge--track'
+                              }`}
+                            >
+                              {conflict.kind === 'clip-both-edited' ? (
+                                <Merge fontSize="inherit" />
+                              ) : (
+                                <WarningAmber fontSize="inherit" />
+                              )}
+                              {conflict.kind === 'clip-both-edited' ? '冲突' : '轨道冲突'}
+                            </span>
+                          </Tooltip>
+                        )}
+                        <div className="clip-title" title={conflict ? `${clip.name} — ${conflict.note}` : clip.name}>
                           <GraphicEq fontSize="inherit" />
                           <span>{clip.name}</span>
                           <small>{clip.duration.toFixed(2)}s</small>
@@ -303,6 +344,17 @@ export function TrackTimeline() {
                         />
                         {selected && (
                           <span className="clip-actions" onPointerDown={(event) => event.stopPropagation()}>
+                            {conflict?.kind === 'clip-both-edited' && (
+                              <Tooltip title="该版本无误，清除冲突标记">
+                                <IconButton
+                                  size="small"
+                                  color="warning"
+                                  onClick={() => resolveClipConflict(track.id, clip.id)}
+                                >
+                                  <WarningAmber fontSize="inherit" />
+                                </IconButton>
+                              </Tooltip>
+                            )}
                             <IconButton
                               size="small"
                               title="复制片段"

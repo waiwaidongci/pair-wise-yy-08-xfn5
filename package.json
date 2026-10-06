@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "bash scripts/vite-with-fixed-node.sh dev",
     "build": "tsc -b && bash scripts/vite-with-fixed-node.sh build",
-    "preview": "bash scripts/vite-with-fixed-node.sh preview"
+    "preview": "bash scripts/vite-with-fixed-node.sh preview",
+    "test:merge": "node_modules/.pnpm/esbuild@*/node_modules/esbuild/bin/esbuild scripts/test-merge.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/test-merge.mjs && node node_modules/.cache/test-merge.mjs",
+    "test:store": "node_modules/.pnpm/esbuild@*/node_modules/esbuild/bin/esbuild scripts/test-store.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/test-store.mjs && node node_modules/.cache/test-store.mjs",
+    "test": "npm run test:merge && npm run test:store"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

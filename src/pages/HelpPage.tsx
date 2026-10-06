@@ -1,4 +1,4 @@
-import { ArrowBack, GraphicEq, Loop, Mic, Tune, Waves } from '@mui/icons-material';
+import { ArrowBack, GraphicEq, Loop, Mic, Merge, Tune, Waves } from '@mui/icons-material';
 import { Button, Card, CardContent, Stack, Typography } from '@mui/material';
 import { Link } from 'react-router-dom';
 
@@ -22,6 +22,11 @@ const TOPICS = [
     icon: <Loop />,
     title: '同步播放',
     body: '所有轨道由同一个 AudioContext 时钟调度，循环播放不会累积时间漂移。',
+  },
+  {
+    icon: <Merge />,
+    title: '离线协作与合并',
+    body: '导出的工程内含合并基准，各自离线修改后再"导入并合并"：轨道与片段分别三路合并——只有一边改的直接采用，两边都改的片段两份都保留并标橙色"冲突"，一边删过的不会复活；对方用到的素材会自动补进素材库。确认取舍后点"撤销导入"可一步回到导入前。',
   },
 ];
 

@@ -3,6 +3,7 @@ import {
   FolderOpen,
   GraphicEq,
   Save,
+  Undo,
 } from '@mui/icons-material';
 import { Alert, Button, Stack, TextField, Typography } from '@mui/material';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -11,8 +12,9 @@ import { ClipInspector } from '../components/ClipInspector';
 import { TrackTimeline } from '../components/TrackTimeline';
 import { TransportBar } from '../components/TransportBar';
 import { useStudioStore } from '../stores/studioStore';
-import type { AudioProject } from '../types/audio';
+import type { MergeReport } from '../types/audio';
 import { audioEngine } from '../utils/audioEngine';
+import { createProjectBundle, parseImportFile } from '../utils/projectMerge';
 
 export function StudioPage() {
   const project = useStudioStore((state) => state.project);
@@ -21,10 +23,13 @@ export function StudioPage() {
   const setPlaying = useStudioStore((state) => state.setPlaying);
   const setPlayhead = useStudioStore((state) => state.setPlayhead);
   const setProjectName = useStudioStore((state) => state.setProjectName);
-  const replaceProject = useStudioStore((state) => state.replaceProject);
+  const mergeImportProject = useStudioStore((state) => state.mergeImportProject);
+  const undoLastImport = useStudioStore((state) => state.undoLastImport);
+  const canUndoImport = useStudioStore((state) => state.lastImportSnapshot !== null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [recordingPulse, setRecordingPulse] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageSeverity, setMessageSeverity] = useState<'info' | 'warning'>('info');
   const mixKey = useMemo(
     () =>
       JSON.stringify(
@@ -138,30 +143,67 @@ export function StudioPage() {
   );
 
   const saveProject = () => {
-    const content = JSON.stringify(project, null, 2);
+    const state = useStudioStore.getState();
+    // 导出包含合并基准的 v2 包，同事导入时才能做三路合并
+    const bundle = createProjectBundle(state.project, state.baseProject);
+    const content = JSON.stringify(bundle, null, 2);
     const blob = new Blob([content], { type: 'application/json;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `${project.name.replaceAll('/', '-')}.waveforge.json`;
+    anchor.download = `${state.project.name.replaceAll('/', '-')}.waveforge.json`;
     anchor.click();
     URL.revokeObjectURL(url);
-    useStudioStore.getState().markSaved();
-    setMessage('工程 JSON 已导出，轨道与效果参数可在其他浏览器中继续编辑。');
+    state.markSaved();
+    setMessageSeverity('info');
+    setMessage('工程已导出（内含合并基准）。同事离线改完再导出，互相导入时会按轨道和片段合并而不是覆盖。');
   };
 
   const importProject = async (file?: File) => {
     if (!file) return;
     try {
-      const parsed = JSON.parse(await file.text()) as AudioProject;
-      if (parsed.version !== 1 || !Array.isArray(parsed.tracks) || !Array.isArray(parsed.assets)) {
-        throw new Error('不是有效的 WaveForge v1 工程文件');
-      }
+      const parsed = parseImportFile(await file.text());
       audioEngine.stop();
-      replaceProject(parsed);
-      setMessage(`已载入工程：${parsed.name}`);
+      const report: MergeReport = mergeImportProject(
+        parsed.project,
+        parsed.base,
+        parsed.legacyBase,
+      );
+      const parts: string[] = [];
+      parts.push(
+        `导入已按轨道 / 片段合并完成：${report.clipConflicts} 处片段双方都改（两份都留着，已在片段上标出冲突）`,
+      );
+      parts.push(`${report.trackConflicts} 处轨道参数冲突`);
+      parts.push(`${report.addedAssets} 个对方素材已补进素材库`);
+      if (report.deleteModifyConflicts) {
+        parts.push(`${report.deleteModifyConflicts} 项一边删除、另一边改过（已按删除优先丢弃，未恢复）`);
+      }
+      if (report.moveDeleteConflicts) {
+        parts.push(`${report.moveDeleteConflicts} 个片段被一边移走、原轨道被另一边删除（已保留在新轨并标出）`);
+      }
+      if (report.missingAssets) {
+        parts.push(`${report.missingAssets} 个素材双方都未携带，已用占位素材补齐避免空片段`);
+      }
+      if (report.legacyBase) {
+        parts.push('该文件是旧版导出（无基准），已按文件当时的工程回填基准');
+      }
+      setMessageSeverity(
+        report.clipConflicts || report.trackConflicts || report.deleteModifyConflicts
+          ? 'warning'
+          : 'info',
+      );
+      setMessage(parts.join('；') + '。可点"撤销导入"一步还原。');
     } catch (error) {
+      setMessageSeverity('warning');
       setMessage(error instanceof Error ? error.message : '工程导入失败');
+    }
+  };
+
+  const handleUndoImport = () => {
+    if (undoLastImport()) {
+      audioEngine.stop();
+      setMessageSeverity('info');
+      setMessage('已退回导入前的工程。');
     }
   };
 
@@ -190,7 +232,16 @@ export function StudioPage() {
             startIcon={<FolderOpen />}
             onClick={() => importInputRef.current?.click()}
           >
-            导入工程
+            导入并合并
+          </Button>
+          <Button
+            variant="outlined"
+            color="warning"
+            startIcon={<Undo />}
+            disabled={!canUndoImport}
+            onClick={handleUndoImport}
+          >
+            撤销导入
           </Button>
           <Button variant="outlined" startIcon={<Download />} onClick={saveProject}>
             导出工程
@@ -225,7 +276,11 @@ export function StudioPage() {
       />
 
       {message && (
-        <Alert severity="info" className="studio-message" onClose={() => setMessage(null)}>
+        <Alert
+          severity={messageSeverity}
+          className="studio-message"
+          onClose={() => setMessage(null)}
+        >
           {message}
         </Alert>
       )}

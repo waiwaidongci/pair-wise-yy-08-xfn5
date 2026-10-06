@@ -2,9 +2,12 @@ import {
   ContentCopy,
   DeleteOutline,
   GraphicEq,
+  Merge,
   Tune,
+  WarningAmber,
 } from '@mui/icons-material';
 import {
+  Alert,
   Box,
   Button,
   Chip,
@@ -28,6 +31,8 @@ export function ClipInspector() {
   const setClipEffect = useStudioStore((state) => state.setClipEffect);
   const duplicateClip = useStudioStore((state) => state.duplicateClip);
   const deleteClip = useStudioStore((state) => state.deleteClip);
+  const resolveClipConflict = useStudioStore((state) => state.resolveClipConflict);
+  const resolveTrackConflict = useStudioStore((state) => state.resolveTrackConflict);
 
   const selection = useMemo(() => {
     for (const track of project.tracks) {
@@ -80,6 +85,35 @@ export function ClipInspector() {
           <small>{asset?.name ?? '未知素材'} · {asset?.duration.toFixed(2) ?? '--'}s</small>
         </div>
       </Box>
+
+      {clip.conflict && (
+        <Alert
+          className="conflict-alert"
+          severity="warning"
+          icon={
+            clip.conflict.kind === 'clip-both-edited' ? (
+              <Merge fontSize="inherit" />
+            ) : (
+              <WarningAmber fontSize="inherit" />
+            )
+          }
+          action={
+            <Button
+              color="inherit"
+              size="small"
+              onClick={() =>
+                clip.conflict?.kind === 'clip-both-edited'
+                  ? resolveClipConflict(track.id, clip.id)
+                  : resolveTrackConflict(track.id)
+              }
+            >
+              确认此版本
+            </Button>
+          }
+        >
+          {clip.conflict.note}
+        </Alert>
+      )}
 
       <div className="inspector-section">
         <Typography className="section-label" variant="caption">时间位置</Typography>

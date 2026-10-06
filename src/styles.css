@@ -564,6 +564,93 @@ input {
   box-shadow: 0 0 0 2px #1769ff, 0 5px 12px rgba(23, 105, 255, .18);
 }
 
+.audio-clip--conflict {
+  z-index: 3;
+  border-width: 1.5px;
+  box-shadow: 0 0 0 1px rgba(217, 119, 6, .35), 0 3px 9px rgba(180, 83, 9, .22);
+}
+
+.clip-conflict-badge {
+  position: absolute;
+  z-index: 6;
+  top: 25px;
+  left: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 6px;
+  border-radius: 9px;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1.5;
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(16, 24, 40, .25);
+}
+
+.clip-conflict-badge--both {
+  background: #d97706;
+}
+
+.clip-conflict-badge--track {
+  background: #b54708;
+}
+
+.clip-conflict-badge svg {
+  font-size: 10px;
+}
+
+.track-conflict-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.track-conflict-badge {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 3px;
+  color: #b54708;
+  font-size: 9px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.track-conflict-badge svg {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.conflict-resolve-button {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border: 1px solid #e9c48f;
+  border-radius: 9px;
+  background: #fffaeb;
+  color: #b54708;
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.conflict-resolve-button:hover {
+  background: #fef0c7;
+}
+
+.conflict-alert {
+  margin-top: 10px;
+  align-items: center;
+  font-size: 11px;
+}
+
+.conflict-alert .MuiAlert-message {
+  min-width: 0;
+  line-height: 1.5;
+}
+
 .clip-title {
   display: flex;
   height: 23px;
