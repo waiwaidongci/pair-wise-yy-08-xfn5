@@ -3,6 +3,7 @@ import {
   FolderOpen,
   GraphicEq,
   Save,
+  Undo,
 } from '@mui/icons-material';
 import { Alert, Button, Stack, TextField, Typography } from '@mui/material';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -12,6 +13,7 @@ import { TrackTimeline } from '../components/TrackTimeline';
 import { TransportBar } from '../components/TransportBar';
 import { useStudioStore } from '../stores/studioStore';
 import type { AudioProject } from '../types/audio';
+import { isSupportedProject } from '../utils/projectMerge';
 import { audioEngine } from '../utils/audioEngine';
 
 export function StudioPage() {
@@ -21,7 +23,9 @@ export function StudioPage() {
   const setPlaying = useStudioStore((state) => state.setPlaying);
   const setPlayhead = useStudioStore((state) => state.setPlayhead);
   const setProjectName = useStudioStore((state) => state.setProjectName);
-  const replaceProject = useStudioStore((state) => state.replaceProject);
+  const mergeImport = useStudioStore((state) => state.mergeImport);
+  const undoImport = useStudioStore((state) => state.undoImport);
+  const canUndoImport = useStudioStore((state) => state.preImportSnapshot !== null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [recordingPulse, setRecordingPulse] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -138,7 +142,13 @@ export function StudioPage() {
   );
 
   const saveProject = () => {
-    const content = JSON.stringify(project, null, 2);
+    // 导出时写入共同祖先基准：已有基准则沿用，否则以当前工程为基准。
+    // 后续同事离线改完再导回来时，就靠这份基准做三方合并。
+    const exportData: AudioProject = {
+      ...project,
+      base: project.base ?? JSON.parse(JSON.stringify(project)),
+    };
+    const content = JSON.stringify(exportData, null, 2);
     const blob = new Blob([content], { type: 'application/json;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
@@ -153,13 +163,25 @@ export function StudioPage() {
   const importProject = async (file?: File) => {
     if (!file) return;
     try {
-      const parsed = JSON.parse(await file.text()) as AudioProject;
-      if (parsed.version !== 1 || !Array.isArray(parsed.tracks) || !Array.isArray(parsed.assets)) {
+      const parsed = JSON.parse(await file.text()) as unknown;
+      if (!isSupportedProject(parsed)) {
         throw new Error('不是有效的 WaveForge v1 工程文件');
       }
       audioEngine.stop();
-      replaceProject(parsed);
-      setMessage(`已载入工程：${parsed.name}`);
+      const stats = mergeImport(parsed);
+      const parts: string[] = [];
+      if (stats.tracksAdded) parts.push(`新增轨道 ${stats.tracksAdded}`);
+      if (stats.tracksRemoved) parts.push(`移除轨道 ${stats.tracksRemoved}`);
+      if (stats.clipsAdded) parts.push(`新增片段 ${stats.clipsAdded}`);
+      if (stats.clipsRemoved) parts.push(`移除片段 ${stats.clipsRemoved}`);
+      if (stats.clipConflicts) parts.push(`片段冲突 ${stats.clipConflicts}（已保留双方版本并标记）`);
+      if (stats.trackConflicts) parts.push(`轨道冲突 ${stats.trackConflicts}（已保留双方版本）`);
+      if (stats.assetsAdded) parts.push(`补入素材 ${stats.assetsAdded}`);
+      setMessage(
+        parts.length
+          ? `已合并工程：${parsed.name}。${parts.join('，')}。`
+          : `已合并工程：${parsed.name}，两边没有差异。`,
+      );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '工程导入失败');
     }
@@ -191,6 +213,14 @@ export function StudioPage() {
             onClick={() => importInputRef.current?.click()}
           >
             导入工程
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<Undo />}
+            disabled={!canUndoImport}
+            onClick={undoImport}
+          >
+            撤销导入
           </Button>
           <Button variant="outlined" startIcon={<Download />} onClick={saveProject}>
             导出工程
@@ -227,6 +257,20 @@ export function StudioPage() {
       {message && (
         <Alert severity="info" className="studio-message" onClose={() => setMessage(null)}>
           {message}
+        </Alert>
+      )}
+
+      {canUndoImport && (
+        <Alert
+          severity="warning"
+          className="studio-message"
+          action={
+            <Button color="inherit" size="small" onClick={undoImport}>
+              撤销导入
+            </Button>
+          }
+        >
+          已按轨道与片段合并导入，可随时撤销回导入前的样子。
         </Alert>
       )}
 

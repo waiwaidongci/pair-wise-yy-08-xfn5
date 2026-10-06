@@ -8,6 +8,7 @@ import type {
   ClipEffect,
   TrackColor,
 } from '../types/audio';
+import { mergeProjects, resolveBase, type MergeStats } from '../utils/projectMerge';
 import { SYNTHETIC_ASSETS } from '../utils/syntheticAudio';
 
 const TRACK_COLORS: TrackColor[] = ['#2563eb', '#0f9f7a', '#d97706', '#c2413b', '#7c3aed', '#0891b2'];
@@ -139,8 +140,10 @@ interface StudioState {
   updateTransport: (patch: Partial<Pick<AudioProject, 'bpm' | 'snap' | 'loopEnabled' | 'loopStart' | 'loopEnd' | 'pixelsPerSecond'>>) => void;
   importFile: (file: File) => Promise<void>;
   addRecordedBlob: (blob: Blob, duration: number) => Promise<void>;
-  replaceProject: (project: AudioProject) => void;
+  mergeImport: (imported: AudioProject) => MergeStats;
+  undoImport: () => void;
   markSaved: () => void;
+  preImportSnapshot: AudioProject | null;
 }
 
 function normalizeProject(project: AudioProject): AudioProject {
@@ -292,7 +295,9 @@ export const useStudioStore = create<StudioState>()(
                 ? {
                     ...track,
                     clips: track.clips.map((clip) =>
-                      clip.id === clipId ? { ...clip, ...patch } : clip,
+                      clip.id === clipId
+                        ? { ...clip, ...patch, conflict: undefined, conflictNote: undefined }
+                        : clip,
                     ),
                   }
                 : track,
@@ -343,6 +348,8 @@ export const useStudioStore = create<StudioState>()(
             id: uid('clip'),
             name: `${clip.name} 副本`,
             start: clip.start + clip.duration,
+            conflict: undefined,
+            conflictNote: undefined,
           };
           return {
             selectedClipId: copy.id,
@@ -419,15 +426,34 @@ export const useStudioStore = create<StudioState>()(
           };
         });
       },
-      replaceProject: (project) =>
+      mergeImport: (imported) => {
+        const state = get();
+        const base = resolveBase(imported);
+        const { project: merged, stats } = mergeProjects(base, state.project, imported);
         set({
-          project: normalizeProject(project),
+          preImportSnapshot: state.project,
+          project: normalizeProject(merged),
           playhead: 0,
           isPlaying: false,
-          selectedClipId: project.tracks.flatMap((track) => track.clips)[0]?.id ?? null,
-          selectedTrackId: project.tracks[0]?.id ?? '',
+          selectedClipId: merged.tracks.flatMap((track) => track.clips)[0]?.id ?? null,
+          selectedTrackId: merged.tracks[0]?.id ?? '',
+        });
+        return stats;
+      },
+      undoImport: () =>
+        set((state) => {
+          if (!state.preImportSnapshot) return {};
+          return {
+            project: normalizeProject(state.preImportSnapshot),
+            preImportSnapshot: null,
+            playhead: 0,
+            isPlaying: false,
+            selectedClipId: state.preImportSnapshot.tracks.flatMap((track) => track.clips)[0]?.id ?? null,
+            selectedTrackId: state.preImportSnapshot.tracks[0]?.id ?? '',
+          };
         }),
       markSaved: () => set({ projectSavedAt: Date.now() }),
+      preImportSnapshot: null,
     }),
     {
       name: 'pair-wise-yy-08-studio',

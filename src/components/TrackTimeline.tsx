@@ -5,6 +5,7 @@ import {
   Lock,
   VolumeOff,
   VolumeUp,
+  Warning,
 } from '@mui/icons-material';
 import {
   Box,
@@ -268,18 +269,18 @@ export function TrackTimeline() {
                     return (
                       <Box
                         key={clip.id}
-                        className={`audio-clip ${selected ? 'audio-clip--selected' : ''}`}
+                        className={`audio-clip ${selected ? 'audio-clip--selected' : ''} ${clip.conflict ? 'audio-clip--conflict' : ''}`}
                         style={{
                           left: `${clip.start * pps}px`,
                           width: `${Math.max(20, clip.duration * pps)}px`,
                           top: `${(track.height - 82) / 2}px`,
                           background: `${track.color}22`,
-                          borderColor: selected ? track.color : `${track.color}99`,
+                          borderColor: selected ? track.color : clip.conflict ? '#d97706' : `${track.color}99`,
                         }}
                         onPointerDown={(event) => startDrag(event, track, clip, 'move')}
                       >
-                        <div className="clip-title" title={clip.name}>
-                          <GraphicEq fontSize="inherit" />
+                        <div className="clip-title" title={clip.conflictNote ?? clip.name}>
+                          {clip.conflict ? <Warning fontSize="inherit" className="clip-conflict-icon" /> : <GraphicEq fontSize="inherit" />}
                           <span>{clip.name}</span>
                           <small>{clip.duration.toFixed(2)}s</small>
                         </div>

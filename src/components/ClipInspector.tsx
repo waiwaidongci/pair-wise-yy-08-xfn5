@@ -3,8 +3,10 @@ import {
   DeleteOutline,
   GraphicEq,
   Tune,
+  Warning,
 } from '@mui/icons-material';
 import {
+  Alert,
   Box,
   Button,
   Chip,
@@ -80,6 +82,12 @@ export function ClipInspector() {
           <small>{asset?.name ?? '未知素材'} · {asset?.duration.toFixed(2) ?? '--'}s</small>
         </div>
       </Box>
+
+      {clip.conflict && (
+        <Alert severity="warning" icon={<Warning fontSize="inherit" />} className="clip-conflict-alert">
+          {clip.conflictNote ?? '此片段在合并时两边都做了修改，已保留双方版本。'}
+        </Alert>
+      )}
 
       <div className="inspector-section">
         <Typography className="section-label" variant="caption">时间位置</Typography>

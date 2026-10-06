@@ -23,6 +23,8 @@ export interface AudioClip {
   fadeOut: number;
   effect: ClipEffect;
   effectAmount: number;
+  conflict?: boolean;
+  conflictNote?: string;
 }
 
 export interface AudioTrack {
@@ -49,4 +51,9 @@ export interface AudioProject {
   tracks: AudioTrack[];
   assets: AudioAsset[];
   updatedAt: number;
+  /**
+   * 三方合并用的共同祖先快照。导出工程时写入，导入时作为 base；
+   * 旧版工程没有该字段，导入时按当时工程内容回填一份基准。
+   */
+  base?: AudioProject;
 }

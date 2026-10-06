@@ -564,6 +564,20 @@ input {
   box-shadow: 0 0 0 2px #1769ff, 0 5px 12px rgba(23, 105, 255, .18);
 }
 
+.audio-clip--conflict {
+  border-style: dashed;
+  box-shadow: 0 0 0 1px rgba(217, 119, 6, .55), 0 2px 6px rgba(180, 83, 9, .16);
+}
+
+.clip-conflict-icon {
+  color: #d97706;
+}
+
+.clip-conflict-alert {
+  margin-top: 10px;
+  font-size: 11px;
+}
+
 .clip-title {
   display: flex;
   height: 23px;
